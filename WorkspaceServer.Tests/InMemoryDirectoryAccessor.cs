@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.DotNet.Try.Markdown;
 
 namespace WorkspaceServer.Tests
@@ -144,9 +145,9 @@ namespace WorkspaceServer.Tests
         {
             var newPath = WorkingDirectory.Combine(relativePath);
             return new InMemoryDirectoryAccessor(newPath)
-                   {
-                       _files = _files
-                   };
+            {
+                _files = _files
+            };
         }
 
         public IEnumerable<RelativeDirectoryPath> GetAllDirectoriesRecursively()
@@ -155,6 +156,15 @@ namespace WorkspaceServer.Tests
                          .OfType<DirectoryInfo>()
                          .Select(key => new RelativeDirectoryPath(
                                           Path.GetRelativePath(WorkingDirectory.FullName, key.FullName)));
+        }
+
+        public IEnumerable<RelativeFilePath> GetAllFiles()
+        {
+            return _files.Keys
+                .OfType<FileInfo>()
+                .Where(key => key.Directory.FullName == WorkingDirectory.FullName)
+                .Select(key => new RelativeFilePath(
+                    Path.GetRelativePath(WorkingDirectory.FullName, key.FullName)));
         }
 
         public IEnumerable<RelativeFilePath> GetAllFilesRecursively()

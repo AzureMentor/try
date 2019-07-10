@@ -38,7 +38,7 @@ namespace MLS.Agent.Tests.CommandLine
 
             var console = new TestConsole();
 
-            await PackCommand.Do(new PackOptions(asset.Directory, enableBlazor: true), console);
+            await PackCommand.Do(new PackOptions(asset.Directory, enableWasm: true), console);
 
             asset.Directory
                  .GetFiles()
@@ -55,7 +55,7 @@ namespace MLS.Agent.Tests.CommandLine
 
             var console = new TestConsole();
 
-            await PackCommand.Do(new PackOptions(asset.Directory, enableBlazor: true), console);
+            await PackCommand.Do(new PackOptions(asset.Directory, enableWasm: true), console);
 
             asset.Directory
                  .GetFiles()
@@ -68,7 +68,7 @@ namespace MLS.Agent.Tests.CommandLine
 
             var exe = Path.Combine(asset.Directory.FullName, packageName);
 
-            var tool = new WorkspaceServer.WorkspaceFeatures.PackageTool(packageName, asset.Directory);
+            var tool = WorkspaceServer.WorkspaceFeatures.PackageTool.TryCreateFromDirectory(packageName, new FileSystemDirectoryAccessor(asset.Directory));
 
             await tool.Prepare();
 

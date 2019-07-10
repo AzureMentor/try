@@ -8,8 +8,8 @@ namespace WorkspaceServer
 {
     public class PackageSource
     {
-        DirectoryInfo _directory;
-        Uri _uri;
+        readonly DirectoryInfo _directory;
+        readonly Uri _uri;
 
         public PackageSource(string value)
         {
@@ -22,7 +22,7 @@ namespace WorkspaceServer
             // (https://docs.microsoft.com/en-us/dotnet/api/system.uri.iswellformeduristring?view=netcore-2.2)
             if (Uri.IsWellFormedUriString(value, UriKind.Absolute) && 
                 Uri.TryCreate(value, UriKind.Absolute, out var uri)
-                && uri.Scheme != null)
+                && uri?.Scheme != null)
             {
                 _uri = uri;
             }

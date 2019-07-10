@@ -41,6 +41,8 @@ namespace MLS.Agent.Controllers
 
         private string GetClientParameters()
         {
+            // Uncomment to enable testing /ide without going through orchestrator
+            // var referrer = "http://localhost:4242"; 
             var referrer = HttpContext.Request.Headers["referer"].ToString();
 
             if (!string.IsNullOrWhiteSpace(referrer) && Uri.TryCreate(referrer, UriKind.Absolute, out var uri))
@@ -61,8 +63,8 @@ namespace MLS.Agent.Controllers
             [JsonProperty("workspaceType", NullValueHandling = NullValueHandling.Ignore)]
             public string WorkspaceType { get; set; }
 
-            [JsonProperty("useBlazor", NullValueHandling = NullValueHandling.Ignore)]
-            public bool? UseBlazor { get; set; }
+            [JsonProperty("useWasmRunner", NullValueHandling = NullValueHandling.Ignore)]
+            public bool? UseWasmRunner { get; set; }
 
             [JsonProperty("scaffold", NullValueHandling = NullValueHandling.Ignore)]
             public string Scaffold { get; set; }

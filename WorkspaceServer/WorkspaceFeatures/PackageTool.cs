@@ -2,11 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MLS.Agent.Tools;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
 using WorkspaceServer.Packaging;
 
@@ -14,30 +10,39 @@ namespace WorkspaceServer.WorkspaceFeatures
 {
     public class PackageTool
     {
-        private readonly DirectoryInfo _workingDirectory;
-        private Lazy<FileInfo> _path { get; }
-
-        public PackageTool(string name, DirectoryInfo workingDirectory)
+        private PackageTool(string name, IDirectoryAccessor directoryAccessor)
         {
-            this.Name = name;
-            this._workingDirectory = workingDirectory;
-            _path = new Lazy<FileInfo>(() => FindTool());
+            Name = name;
+            DirectoryAccessor = directoryAccessor;
         }
 
-        public bool Exists => _path.Value != null && _path.Value.Exists;
+        public IDirectoryAccessor DirectoryAccessor { get; }
 
         public string Name { get; }
 
-        public async Task<DirectoryInfo> LocateBuildAsset()
+        public static PackageTool TryCreateFromDirectory(string name, IDirectoryAccessor directoryAccessor)
         {
-            var result = await CommandLine.Execute(_path.Value, MLS.PackageTool.PackageToolConstants.LocateBuildAsset, _workingDirectory);
+            var tool = new PackageTool(name, directoryAccessor);
+            if (tool.Exists())
+            {
+                return tool;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        public async Task<ProjectAsset> LocateProjectAsset()
+        {
+            var result = await CommandLine.Execute(GetFilePath(), MLS.PackageTool.PackageToolConstants.LocateProjectAsset, DirectoryAccessor.GetFullyQualifiedRoot());
             var projectDirectory = new DirectoryInfo(string.Join("", result.Output));
-            return projectDirectory;
+            return new ProjectAsset(new FileSystemDirectoryAccessor(projectDirectory));
         }
 
         public async Task<WebAssemblyAsset> LocateWasmAsset()
         {
-            var result = await CommandLine.Execute(_path.Value, MLS.PackageTool.PackageToolConstants.LocateWasmAsset, _workingDirectory);
+            var result = await CommandLine.Execute(GetFilePath(), MLS.PackageTool.PackageToolConstants.LocateWasmAsset, DirectoryAccessor.GetFullyQualifiedRoot());
             var projectDirectory = new DirectoryInfo(string.Join("", result.Output));
 
             if (!projectDirectory.Exists)
@@ -50,20 +55,18 @@ namespace WorkspaceServer.WorkspaceFeatures
 
         public Task Prepare()
         {
-            return CommandLine.Execute(_path.Value, MLS.PackageTool.PackageToolConstants.PreparePackage, _workingDirectory);
+            GetFilePath();
+            return CommandLine.Execute(GetFilePath(), MLS.PackageTool.PackageToolConstants.PreparePackage, DirectoryAccessor.GetFullyQualifiedRoot());
         }
 
-        FileInfo FindTool()
+        private string GetFilePath()
         {
-            var exeName = Path.Combine(_workingDirectory.FullName, Name.ExecutableName());
-            var fileInfo = new FileInfo(exeName);
+            return DirectoryAccessor.GetFullyQualifiedFilePath(Name.ExecutableName()).FullName;
+        }
 
-            if (!fileInfo.Exists)
-            {
-                return null;
-            }
-
-            return fileInfo;
+        public bool Exists()
+        {
+            return DirectoryAccessor.FileExists(Name.ExecutableName());
         }
     }
 }

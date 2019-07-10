@@ -5,13 +5,20 @@ using Newtonsoft.Json;
 
 namespace Microsoft.DotNet.Try.Jupyter.Protocol
 {
-    public class ExecuteReply
+    [JupyterMessageType(MessageTypeValues.ExecuteReply)]
+    public class ExecuteReply : JupyterMessageContent
     {
-        [JsonProperty("status")]
-        public string Status { get; set; }
+        [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
+        public string Status { get; }
 
-        [JsonProperty("execution_count", NullValueHandling = NullValueHandling.Ignore)]
-        public int ExecutionCount { get; set; }
+        [JsonProperty("execution_count")]
+        public int ExecutionCount { get; }
+
+        public ExecuteReply(string status = null, int executionCount = 0)
+        {
+            Status = status;
+            ExecutionCount = executionCount;
+        }
 
     }
 }

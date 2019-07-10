@@ -4,21 +4,25 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using Newtonsoft.Json;
 
 namespace Microsoft.DotNet.Try.Protocol
 {
     public class Workspace
     {
         private const string DefaultWorkspaceType = "script";
+        private const string DefaultLanguage = "csharp";
 
         public Workspace(
             string[] usings = null,
             File[] files = null,
             Buffer[] buffers = null,
             string workspaceType = DefaultWorkspaceType,
+            string language =  DefaultLanguage,
             bool includeInstrumentation = false)
         {
-            WorkspaceType = workspaceType ?? DefaultWorkspaceType;
+            WorkspaceType = string.IsNullOrWhiteSpace(workspaceType) ? DefaultWorkspaceType : workspaceType;
+            Language = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
             Usings = usings ?? Array.Empty<string>();
             Usings = usings ?? Array.Empty<string>();
             Files = files ?? Array.Empty<File>();
@@ -37,16 +41,24 @@ namespace Microsoft.DotNet.Try.Protocol
             }
         }
 
+        [JsonProperty("language")]
+        public string Language { get; }
+
+        [JsonProperty("files")]
         public File[] Files { get; }
 
+        [JsonProperty("usings")]
         public string[] Usings { get; }
 
+        [JsonProperty("workspaceType")]
         public string WorkspaceType { get; }
 
+        [JsonProperty("includeInstrumentation")]
         public bool IncludeInstrumentation { get; }
 
         [Required]
         [MinLength(1)]
+        [JsonProperty("buffers")]
         public Buffer[] Buffers { get; }
 
         public static Workspace FromSource(
@@ -54,10 +66,12 @@ namespace Microsoft.DotNet.Try.Protocol
             string workspaceType,
             string id = "Program.cs",
             string[] usings = null,
+            string language = DefaultLanguage,
             int position = 0)
         {
             return new Workspace(
                 workspaceType: workspaceType,
+                language: language,
                 buffers: new[]
                 {
                     new Buffer(BufferId.Parse(id ?? throw new ArgumentNullException(nameof(id))), source, position)
@@ -67,9 +81,11 @@ namespace Microsoft.DotNet.Try.Protocol
 
         public static Workspace FromSources(
             string workspaceType = null,
+            string language = DefaultLanguage,
             params (string id, string content, int position)[] sources) =>
             new Workspace(
                 workspaceType: workspaceType,
+                language: language,
                 buffers: sources.Select(s => new Buffer(BufferId.Parse(s.id), s.content, s.position)).ToArray());
     }
 }

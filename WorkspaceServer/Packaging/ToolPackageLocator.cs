@@ -24,8 +24,8 @@ namespace WorkspaceServer.Packaging
 
         public async Task<Package> LocatePackageAsync(string name, Budget budget)
         {
-            var candidateTool = new PackageTool(name, _baseDirectory);
-            if (!candidateTool.Exists)
+            var candidateTool = PackageTool.TryCreateFromDirectory(name, new FileSystemDirectoryAccessor(_baseDirectory));
+            if (candidateTool == null)
             {
                 return null;
             }
@@ -43,7 +43,7 @@ namespace WorkspaceServer.Packaging
         public async Task<DirectoryInfo> PrepareToolAndLocateAssetDirectory(PackageTool tool)
         {
             await tool.Prepare();
-            return await tool.LocateBuildAsset();
+            return (await tool.LocateProjectAsset()).DirectoryAccessor.GetFullyQualifiedRoot();
         }
     }
 }

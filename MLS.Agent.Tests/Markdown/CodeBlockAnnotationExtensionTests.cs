@@ -29,9 +29,9 @@ namespace MLS.Agent.Tests.Markdown
         {
             var console = new TestConsole();
             _package = new AsyncLazy<(PackageRegistry, string)>( async () => {
-                var dir = await LocalToolHelpers.CreateTool(console);
+                var (dir, name) = await LocalToolHelpers.CreateTool(console);
                 var strategy = new LocalToolInstallingPackageDiscoveryStrategy(dir, new PackageSource(dir.FullName));
-                return (new PackageRegistry(true, null, additionalStrategies: strategy), "console");
+                return (new PackageRegistry(true, null, additionalStrategies: strategy), name);
             }
             );
         }
@@ -63,25 +63,25 @@ namespace BasicConsoleApp
                  ("Program.cs", fileContent),
                  ("sample.csproj", "")
             };
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var document =
 $@"```{language} --source-file Program.cs
 ```";
-            string html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
+            var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
             html.Should().Contain(fileContent.HtmlEncode().ToString());
         }
 
         [Fact]
-        public async Task Does_not_insert_code_when_specified_language_is_not_csharp()
+        public async Task Does_not_insert_code_when_specified_language_is_not_supported()
         {
-            string expectedValue =
+            var expectedValue =
 @"<pre><code class=""language-js"">console.log(&quot;Hello World&quot;);
 </code></pre>
 ".EnforceLF();
 
             var testDir = TestAssets.SampleConsole;
             var directoryAccessor = new InMemoryDirectoryAccessor(testDir);
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var document = @"
 ```js  --source-file Program.cs
 console.log(""Hello World"");
@@ -90,34 +90,41 @@ console.log(""Hello World"");
             html.Should().Contain(expectedValue);
         }
 
-        [Fact]
-        public async Task Does_not_insert_code_when_csharp_is_specified_but_no_additional_options()
+        [Theory]
+        [InlineData("cs", "language-cs")]
+        [InlineData("csharp", "language-csharp")]
+        [InlineData("c#", "language-c#")]
+        [InlineData("fs", "language-fs")]
+        [InlineData("fsharp", "language-fsharp")]
+        [InlineData("f#", "language-f#")]
+        public async Task Does_not_insert_code_when_supported_language_is_specified_but_no_additional_options(string fenceLanguage, string expectedClass)
         {
-            string expectedValue =
-@"<pre><code class=""language-cs"">Console.WriteLine(&quot;Hello World&quot;);
+            var expectedValue =
+$@"<pre><code class=""{expectedClass}"">Console.WriteLine(&quot;Hello World&quot;);
 </code></pre>
 ".EnforceLF();
 
             var testDir = TestAssets.SampleConsole;
             var directoryAccessor = new InMemoryDirectoryAccessor(testDir);
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
-            var document = @"
-```cs
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
+            var document = $@"
+```{fenceLanguage}
 Console.WriteLine(""Hello World"");
 ```";
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
             html.Should().Contain(expectedValue);
         }
+     
 
         [Fact]
-        public async Task Error_messsage_is_displayed_when_the_linked_file_does_not_exist()
+        public async Task Error_message_is_displayed_when_the_linked_file_does_not_exist()
         {
             var testDir = TestAssets.SampleConsole;
             var directoryAccessor = new InMemoryDirectoryAccessor(testDir)
             {
                 ("sample.csproj", "")
             };
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var document =
 @"```cs --source-file DOESNOTEXIST
 ```";
@@ -133,7 +140,7 @@ Console.WriteLine(""Hello World"");
             {
                 ("Program.cs", "")
             };
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var document =
 @"```cs  --source-file Program.cs
 ```";
@@ -155,7 +162,7 @@ Console.WriteLine(""Hello World"");
             var document =
 $@"```cs --project {projectPath}  --source-file Program.cs
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             html.Should().Contain($"Project not found: ./{projectPath}");
@@ -172,7 +179,7 @@ $@"```cs --project {projectPath}  --source-file Program.cs
                 ("src/sample/sample.csproj", "")
             };
 
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
 
             var package = "../src/sample/sample.csproj";
             var document =
@@ -188,6 +195,38 @@ $@"```cs --project {package} --source-file ../src/sample/Program.cs
 
             var fullProjectPath = directoryAccessor.GetFullyQualifiedPath(new RelativeFilePath(package));
             output.Value.Should().Be(fullProjectPath.FullName);
+        }
+
+        [Theory]
+        [InlineData("cs", "Program.cs", "sample.csproj", "csharp")]
+        [InlineData("c#", "Program.cs", "sample.csproj", "csharp")]
+        [InlineData("fs", "Program.fs", "sample.fsproj", "fsharp")]
+        [InlineData("f#", "Program.fs", "sample.fsproj", "fsharp")]
+        public async Task Sets_the_trydotnet_language_attribute_using_the_fence_command(string fenceLanguage, string fileName, string projectName, string expectedLanguage)
+        {
+            var rootDirectory = TestAssets.SampleConsole;
+            var currentDir = new DirectoryInfo(Path.Combine(rootDirectory.FullName, "docs"));
+            var directoryAccessor = new InMemoryDirectoryAccessor(currentDir, rootDirectory)
+            {
+                ($"src/sample/{fileName}", ""),
+                ($"src/sample/{projectName}", "")
+            };
+
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
+
+            var package = $"../src/sample/{projectName}";
+            var document =
+                $@"```{fenceLanguage} --project {package} --source-file ../src/sample/{fileName}
+```";
+
+            var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
+
+            var htmlDocument = new HtmlDocument();
+            htmlDocument.LoadHtml(html);
+            var trydotnetLanguage = htmlDocument.DocumentNode
+                .SelectSingleNode("//pre/code").Attributes["data-trydotnet-language"];
+
+            trydotnetLanguage.Value.Should().Be(expectedLanguage);
         }
 
         [Fact]
@@ -277,7 +316,7 @@ namespace BasicConsoleApp
             var document =
 @"```cs --source-file Program.cs --region codeRegion
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             var htmlDocument = new HtmlDocument();
@@ -307,7 +346,7 @@ Console.WriteLine(""Hello World"");
             var document =
 $@"```cs --source-file {filename} --region codeRegion
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             var htmlDocument = new HtmlDocument();
@@ -337,7 +376,7 @@ Console.WriteLine(""Hello World"");
             var document =
                 $@"```cs --source-file {sourceFile} --destination-file {destinationFile} --region codeRegion
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             var htmlDocument = new HtmlDocument();
@@ -366,7 +405,7 @@ Console.WriteLine(""Hello World"");
             var document =
 $@"```cs --source-file Program.cs --region {region}
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             var htmlDocument = new HtmlDocument();
@@ -391,7 +430,7 @@ $@"```cs --source-file Program.cs --region {region}
             var document =
 $@"```cs --source-file Program.cs --region {region}
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             var htmlDocument = new HtmlDocument();
@@ -422,7 +461,7 @@ $@"```cs --source-file Program.cs --region {region}
             var document =
                 $@"```cs --source-file Program.cs --region {region}
 ```";
-            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode()).Build();
+            var pipeline = new MarkdownPipelineBuilder().UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync()).Build();
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
 
             var htmlDocument = new HtmlDocument();
@@ -446,7 +485,7 @@ $@"```cs --source-file Program.cs --region {region}
                 $@"```cs --source-file Program.cs --session {session}
 ```";
             var pipeline = new MarkdownPipelineBuilder()
-                           .UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode())
+                           .UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync())
                            .Build();
 
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();
@@ -473,7 +512,7 @@ $@"```cs --source-file Program.cs --region {region}
                 @"```cs --source-file Program.cs
 ```";
             var pipeline = new MarkdownPipelineBuilder()
-                           .UseCodeBlockAnnotations(directoryAccessor, PackageRegistry.CreateForHostedMode())
+                           .UseCodeBlockAnnotations(directoryAccessor,await  Default.PackageRegistry.ValueAsync())
                            .Build();
 
             var html = (await pipeline.RenderHtmlAsync(document)).EnforceLF();

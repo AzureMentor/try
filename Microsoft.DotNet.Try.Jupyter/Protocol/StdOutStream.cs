@@ -3,11 +3,11 @@
 
 namespace Microsoft.DotNet.Try.Jupyter.Protocol
 {
+    [JupyterMessageType(MessageTypeValues.Stream)]
     public class StdOutStream : Stream
     {
-        public StdOutStream()
+        public StdOutStream(string text) : base("stdout", text)
         {
-            Name = "stdout";
         }
     }
 }

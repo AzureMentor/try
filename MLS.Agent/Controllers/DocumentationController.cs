@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -12,6 +13,8 @@ using Microsoft.DotNet.Try.Markdown;
 using MLS.Agent.CommandLine;
 using MLS.Agent.Markdown;
 using Recipes;
+using WorkspaceServer;
+using WorkspaceServer.Packaging;
 
 namespace MLS.Agent.Controllers
 {
@@ -19,34 +22,25 @@ namespace MLS.Agent.Controllers
     {
         private readonly MarkdownProject _markdownProject;
         private readonly StartupOptions _startupOptions;
+        private readonly PackageRegistry _packageRegistry;
         private static readonly string _cacheBuster = VersionSensor.Version().AssemblyVersion;
 
-        public DocumentationController(MarkdownProject markdownProject, StartupOptions startupOptions)
+        public DocumentationController(MarkdownProject markdownProject, StartupOptions startupOptions, PackageRegistry packageRegistry)
         {
             _markdownProject = markdownProject ??
                                throw new ArgumentNullException(nameof(markdownProject));
             _startupOptions = startupOptions;
+            _packageRegistry = packageRegistry ??
+                               throw new ArgumentNullException(nameof(packageRegistry));
         }
 
         [HttpGet]
-        [Route("{*path}")]
+        [Route("{*path:regex(.*.md?$)}")]
         public async Task<IActionResult> ShowMarkdownFile(string path)
         {
             if (_startupOptions.Mode != StartupMode.Try)
             {
                 return NotFound();
-            }
-
-            if (string.IsNullOrEmpty(path))
-            {
-                const string documentSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" version=\"1.1\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><path d=\"M6,2A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6M6,4H13V9H18V20H6V4M8,12V14H16V12H8M8,16V18H13V16H8Z\" /></svg>";
-                var links = string.Join(
-                    "\n",
-                    _markdownProject.GetAllMarkdownFiles()
-                                    .Select(f =>
-                                     $@"<li><a href=""{f.Path.Value.HtmlAttributeEncode()}"">{documentSvg}<span>{f.Path.Value}</span></a></li>"));
-
-                return Content(Index(links).ToString(), "text/html");
             }
 
             var relativeFilePath = new RelativeFilePath(path);
@@ -77,7 +71,7 @@ namespace MLS.Agent.Controllers
 
             }
 
-            
+
 
             var content = maxEditorPerSession <= 1
                               ? await OneColumnLayoutScaffold(
@@ -89,6 +83,21 @@ namespace MLS.Agent.Controllers
 
             return Content(content.ToString(), "text/html");
         }
+
+        [HttpGet]
+        [Route("/")]
+        public async Task<IActionResult> ShowIndex()
+        {
+            const string documentSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" version=\"1.1\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><path d=\"M6,2A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6M6,4H13V9H18V20H6V4M8,12V14H16V12H8M8,16V18H13V16H8Z\" /></svg>";
+            var links = string.Join(
+                "\n",
+                _markdownProject.GetAllMarkdownFiles()
+                                .Select(f =>
+                                 $@"<li><a href=""{f.Path.Value.HtmlAttributeEncode()}"">{documentSvg}<span>{f.Path.Value}</span></a></li>"));
+
+            return Content(Index(links).ToString(), "text/html");
+        }
+
 
         public static async Task<IHtmlContent> SessionControlsHtml(MarkdownFile markdownFile, bool enablePreviewFeatures = false)
         {
@@ -110,7 +119,49 @@ namespace MLS.Agent.Controllers
             return new HtmlString(sb.ToString());
         }
 
-        private IHtmlContent Layout(string hostUrl, MarkdownFile markdownFile, IHtmlContent content) =>
+        private async Task<AutoEnableOptions> GetAutoEnableOptions(MarkdownFile file)
+        {
+            bool useWasmRunner;
+
+            if (_startupOptions.Package != null)
+            {
+                var package = await _packageRegistry.Get<Package2>(_startupOptions.Package);
+                useWasmRunner = package.CanSupportWasm;
+            }
+            else
+            {
+                var blocks = await file.GetAnnotatedCodeBlocks();
+                var packageUsesWasm = await Task.WhenAll(blocks
+                    .Select(b => b.PackageName())
+                    .Select(async name => (await _packageRegistry.Get<ICanSupportWasm>(name))?.CanSupportWasm ?? false));
+
+                useWasmRunner = packageUsesWasm.Any(p => p);
+            }
+
+            var requestUri = Request.GetUri();
+
+            var hostUrl = $"{requestUri.Scheme}://{requestUri.Authority}";
+            return new AutoEnableOptions(hostUrl, useWasmRunner);
+        }
+
+        private class AutoEnableOptions
+        {
+            public AutoEnableOptions(string apiBaseAddress, bool useWasmRunner)
+            {
+                ApiBaseAddress = apiBaseAddress;
+                UseWasmRunner = useWasmRunner;
+            }
+
+            public string ApiBaseAddress { get; }
+
+            public bool UseWasmRunner { get; }
+        }
+
+        private IHtmlContent Layout(
+            string hostUrl,
+            MarkdownFile markdownFile,
+            IHtmlContent content,
+            AutoEnableOptions autoEnableOptions) =>
             $@"
 <!DOCTYPE html>
 <html lang=""en"">
@@ -120,6 +171,7 @@ namespace MLS.Agent.Controllers
     <script src=""/api/trydotnet.min.js?v={_cacheBuster}""></script>
     <link rel=""stylesheet"" href=""/css/trydotnet.css?v={_cacheBuster}"">  
     <link rel=""icon"" type=""image/png"" href=""favicon-32x32.png"">
+    {MathSupport()}
     <title>dotnet try - {markdownFile.Path.Value.HtmlEncode()}</title>
 </head>
 
@@ -132,28 +184,42 @@ namespace MLS.Agent.Controllers
     {Footer()}
 
     <script>
-        trydotnet.autoEnable({{ apiBaseAddress: new URL(""{hostUrl}""), useBlazor:false }});
+        trydotnet.autoEnable({{ apiBaseAddress: new URL(""{autoEnableOptions.ApiBaseAddress}""), useWasmRunner: {autoEnableOptions.UseWasmRunner.ToString().ToLowerInvariant()} }});
     </script>
 </body>
 
 </html>".ToHtmlContent();
 
+        private IHtmlContent MathSupport() =>
+            @"
+    <script type=""text/x-mathjax-config"">
+        MathJax.Hub.Config({
+        tex2jax: {inlineMath: [[""$"",""$""],[""\\("",""\\)""]]},       
+        showMathMenu: false,
+        showMathMenuMSIE: false
+    });
+    </script>
+    <script type=""text/javascript"" src=""https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS_SVG""></script>".ToHtmlContent();
+
         private async Task<IHtmlContent> OneColumnLayoutScaffold(string hostUrl, MarkdownFile markdownFile) =>
-            Layout(hostUrl, markdownFile,
-                   $@"
-            <div id=""documentation-container"" class=""markdown-body"">
+            Layout(
+                hostUrl,
+                markdownFile,
+                await DocumentationDiv(markdownFile),
+                await GetAutoEnableOptions(markdownFile));
+
+        private static async Task<IHtmlContent> DocumentationDiv(MarkdownFile markdownFile) =>
+            $@"<div id=""documentation-container"" class=""markdown-body"">
                 {await markdownFile.ToHtmlContentAsync()}
-            </div>".ToHtmlContent());
+            </div>".ToHtmlContent();
 
         private async Task<IHtmlContent> TwoColumnLayoutScaffold(string hostUrl, MarkdownFile markdownFile) =>
             Layout(hostUrl, markdownFile,
-                   $@"
-            <div id=""documentation-container"" class=""markdown-body"">
-                {await markdownFile.ToHtmlContentAsync()}
-            </div>
+                   $@"{await DocumentationDiv(markdownFile)}
             <div class=""control-column"">
                 {await SessionControlsHtml(markdownFile, _startupOptions.EnablePreviewFeatures)}
-            </div>".ToHtmlContent());
+            </div>".ToHtmlContent(),
+                   await GetAutoEnableOptions(markdownFile));
 
         private IHtmlContent Index(string html) =>
             $@"

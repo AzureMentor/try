@@ -33,15 +33,16 @@ namespace WorkspaceServer.Packaging
 
         public DirectoryInfo Directory { get; set; }
 
-        public bool CreateRebuildablePackage { get; internal set; }
+        public bool CreateRebuildablePackage { get; set; }
 
         public bool BlazorSupported { get; private set; }
 
-        public void CreateUsingDotnet(string template, string projectName = null)
+        public void CreateUsingDotnet(string template, string projectName = null, string language = null)
         {
             PackageInitializer = new PackageInitializer(
                template,
                projectName ?? PackageName,
+               language,
                AfterCreate);
         }
 

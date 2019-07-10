@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TargetFramework>netcoreapp3.0</TargetFramework>
     <AssetTargetFallback>portable-net45+win8+wp8+wpa81</AssetTargetFallback>
     <NoWarn>$(NoWarn);1998</NoWarn><!-- async method doesn't use 'await' -->
     <NoWarn>$(NoWarn);8002</NoWarn><!-- Clockwise isn't strongly signed -->
@@ -21,9 +21,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AsyncLock" Version="0.1.8580001">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Assent" Version="1.3.1" />
     <PackageReference Include="Clockwise" Version="1.0.261-beta" />
-    <PackageReference Include="FluentAssertions" Version="5.6.0" />
+    <PackageReference Include="FluentAssertions" Version="5.7.0" />
     <PackageReference Include="HttpResponseMessageAssertions" Version="0.1.8580001">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
@@ -42,15 +46,12 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="3.1.0-beta3-final" />
     <PackageReference Include="Microsoft.CodeAnalysis.Scripting" Version="3.1.0-beta3-final" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="3.1.0-beta3-final" />
-    <PackageReference Include="Microsoft.Reactive.Testing" Version="4.1.3" />
+    <PackageReference Include="Microsoft.Reactive.Testing" Version="4.1.5" />
     <PackageReference Include="Pocket.Disposable" Version="1.0.5">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="PocketLogger" Version="0.3.0">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="PocketLogger.For.MicrosoftExtensionsLogging" Version="0.1.2">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="PocketLogger.For.Xunit" Version="0.1.4">
@@ -60,7 +61,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="System.Reactive" Version="4.1.3" />
+    <PackageReference Include="System.Reactive" Version="4.1.5" />
   </ItemGroup>
 
   <ItemGroup>

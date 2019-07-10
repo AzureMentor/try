@@ -20,6 +20,12 @@ namespace MLS.Agent.Tests
         {
             _disposables.Add(output.SubscribeToPocketLogger());
             _disposables.Add(VirtualClock.Start());
+            EnsureConsoleWorkspaceCreated();
+        }
+
+        private void EnsureConsoleWorkspaceCreated()
+        {
+            Task.Run(() => WorkspaceServer.Tests.Default.PackageRegistry.ValueAsync()).Wait();
         }
 
         public void Dispose() => _disposables.Dispose();
@@ -63,7 +69,7 @@ namespace MLS.Agent.Tests
             StartupOptions options = null)
         {
             HttpResponseMessage response;
-            using (var agent = new AgentService(options))
+            using (var agent = new AgentService(options ?? StartupOptions.FromCommandLine("hosted")))
             {
                 var request = new HttpRequestMessage(
                     HttpMethod.Post,

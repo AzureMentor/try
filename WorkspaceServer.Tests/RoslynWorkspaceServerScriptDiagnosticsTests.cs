@@ -1,8 +1,6 @@
 // Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.DotNet.Try.Protocol;
@@ -22,27 +20,24 @@ namespace WorkspaceServer.Tests
         {
         }
 
-        protected override Task<(ICodeRunner runner, Package workspace)> GetRunnerAndWorkspaceBuild(string testName = null)
-        {
-            return Task.FromResult(((ICodeRunner)new ScriptingWorkspaceServer(),(Package) new NonrebuildablePackage("script")));
-        }
-
         [Fact]
         public async Task Get_diagnostics()
         {
             var code = @"addd";
             var (processed, markLocation) = CodeManipulation.ProcessMarkup(code);
 
-            var ws = new Workspace(buffers: new[] { new Buffer("", processed, markLocation) });
-            var request = new WorkspaceRequest(ws, activeBufferId: "");
-            var server = GetLanguageService();
+            var ws = new Workspace(buffers: new[] { new Buffer("file.csx", processed, markLocation) });
+            var request = new WorkspaceRequest(ws, activeBufferId: "file.csx");
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetDiagnostics(request);
             result.Diagnostics.Should().NotBeEmpty();
-            result.Diagnostics.Should().Contain(diagnostics => diagnostics.Message == "(1,1): error CS0103: The name \'addd\' does not exist in the current context");
+            result.Diagnostics.Should().Contain(diagnostics => diagnostics.Message == "file.csx(1,1): error CS0103: The name \'addd\' does not exist in the current context");
         }
 
-        protected override ILanguageService GetLanguageService(
-            [CallerMemberName] string testName = null) => new RoslynWorkspaceServer(
-            PackageRegistry.CreateForHostedMode());
+        protected override async Task<ILanguageService> GetLanguageServiceAsync() => new RoslynWorkspaceServer(await Default.PackageRegistry.ValueAsync());
+
+        protected override async Task<ICodeCompiler> GetCodeCompilerAsync() => new RoslynWorkspaceServer(await Default.PackageRegistry.ValueAsync());
+
+        protected override async Task<ICodeRunner> GetCodeRunnerAsync() => new RoslynWorkspaceServer(await Default.PackageRegistry.ValueAsync());
     }
 }

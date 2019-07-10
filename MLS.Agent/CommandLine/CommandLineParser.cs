@@ -6,6 +6,7 @@ using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Invocation;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Clockwise;
 using Microsoft.AspNetCore.Hosting;
@@ -53,17 +54,22 @@ namespace MLS.Agent.CommandLine
             IConsole console,
             StartServer startServer = null,
             InvocationContext context = null);
-     
+
         public static Parser Create(
+            IServiceCollection services, 
             StartServer startServer = null,
             Demo demo = null,
             TryGitHub tryGithub = null,
             Pack pack = null,
             Install install = null,
             Verify verify = null,
-            Jupyter jupyter = null,
-            IServiceCollection services = null)
+            Jupyter jupyter = null)
         {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+
             startServer = startServer ??
                           ((options, invocationContext) =>
                                   Program.ConstructWebHost(options).Run());
@@ -91,10 +97,16 @@ namespace MLS.Agent.CommandLine
             pack = pack ??
                    PackCommand.Do;
 
-             install = install??
-              InstallCommand.Do;
-            services = services ??
-             new ServiceCollection();
+            install = install ??
+             InstallCommand.Do;
+        
+
+            var dirArgument = new Argument<DirectoryInfo>
+            {
+                Arity = ArgumentArity.ZeroOrOne,
+                Name = nameof(StartupOptions.Dir).ToLower(),
+                Description = "Specify the path to the root directory for your documentation"
+            }.ExistingOnly();
 
             var rootCommand = StartInTryMode();
 
@@ -125,61 +137,92 @@ namespace MLS.Agent.CommandLine
                 var command = new RootCommand
                 {
                     Name = "dotnet-try",
-                    Description = ".NET interactive documentation in your browser",
-                    Argument = new Argument<DirectoryInfo>
-                    {
-                        Arity = ArgumentArity.ZeroOrOne,
-                        Name = nameof(StartupOptions.Dir).ToLower(),
-                        Description = "Specify the path to the root directory for your documentation"
-                    }.ExistingOnly()
+                    Description = "Interactive documentation in your browser"
                 };
+
+                command.AddArgument(dirArgument);
 
                 command.AddOption(new Option(
                                       "--add-package-source",
-                                      "Specify an additional NuGet package source",
-                                      new Argument<PackageSource>(new PackageSource(Directory.GetCurrentDirectory()))
+                                      "Specify an additional NuGet package source")
+                                  {
+                                      Argument = new Argument<PackageSource>(() => new PackageSource(Directory.GetCurrentDirectory()))
                                       {
                                           Name = "NuGet source"
-                                      }));
+                                      }
+                                  });
 
                 command.AddOption(new Option(
                                       "--package",
-                                      "Specify a Try .NET package or path to a .csproj to run code samples with",
-                                      new Argument<string>
+                                      "Specify a Try .NET package or path to a .csproj to run code samples with")
+                                  {
+                                      Argument = new Argument<string>
                                       {
                                           Name = "name or .csproj"
-                                      }));
+                                      }
+                                  });
 
                 command.AddOption(new Option(
                                       "--package-version",
-                                      "Specify a Try .NET package version to use with the --package option",
-                                      new Argument<string>
+                                      "Specify a Try .NET package version to use with the --package option")
+                                  {
+                                      Argument = new Argument<string>
                                       {
                                           Name = "version"
-                                      }));
+                                      }
+                                  });
 
                 command.AddOption(new Option(
                                       "--uri",
-                                      "Specify a URL or a relative path to a Markdown file",
-                                      new Argument<Uri>()));
+                                      "Specify a URL or a relative path to a Markdown file")
+                                  {
+                                      Argument = new Argument<Uri>()
+                                  });
 
                 command.AddOption(new Option(
-                                      "--enable-preview-features",
-                                      "Enable preview features",
-                                      new Argument<bool>()));
+                                          "--enable-preview-features",
+                                          "Enable preview features")
+                                  {
+                                      Argument = new Argument<bool>()
+                                  });
 
                 command.AddOption(new Option(
                                       "--log-path",
-                                      "Enable file logging to the specified directory",
-                                      new Argument<DirectoryInfo>
+                                      "Enable file logging to the specified directory")
+                                  {
+                                      Argument = new Argument<DirectoryInfo>
                                       {
                                           Name = "dir"
-                                      }));
+                                      }
+                                  });
 
                 command.AddOption(new Option(
-                                      "--verbose",
-                                      "Enable verbose logging to the console",
-                                      new Argument<bool>()));
+                                          "--verbose",
+                                          "Enable verbose logging to the console")
+                                  {
+                                      Argument = new Argument<bool>()
+                                  });
+
+                var portArgument = new Argument<ushort>();
+
+                portArgument.AddValidator(symbolResult =>
+                {
+                    if (symbolResult.Tokens
+                                    .Select(t => t.Value)
+                                    .Count(value => !ushort.TryParse(value, out _)) > 0)
+                    {
+                        return "Invalid argument for --port option";
+                    }
+
+                    return null;
+                });
+
+                command.AddOption(new Option(
+                                        "--port",
+                                        "Specify the port for dotnet try to listen on")
+                                  {
+                                      Argument = portArgument
+                                  });
 
                 command.Handler = CommandHandler.Create<InvocationContext, StartupOptions>((context, options) =>
                 {
@@ -197,38 +240,61 @@ namespace MLS.Agent.CommandLine
             {
                 var command = new Command("hosted")
                 {
-                    Description = "Starts the Try .NET agent",
-                    IsHidden = true
+                    new Option(
+                        "--id",
+                        "A unique id for the agent instance (e.g. its development environment id).")
+                    {
+                        Argument = new Argument<string>(defaultValue: () => Environment.MachineName)
+                    },
+                    new Option(
+                        "--production",
+                        "Specifies whether the agent is being run using production resources")
+                    {
+                        Argument = new Argument<bool>()
+                    },
+                    new Option(
+                        "--language-service",
+                        "Specifies whether the agent is being run in language service-only mode")
+                    {
+                        Argument = new Argument<bool>()
+                    },
+                    new Option(
+                        new[]
+                        {
+                            "-k",
+                            "--key"
+                        },
+                        "The encryption key")
+                    {
+                        Argument = new Argument<string>()
+                    },
+                    new Option(
+                        new[]
+                        {
+                            "--ai-key",
+                            "--application-insights-key"
+                        },
+                        "Application Insights key.")
+                    {
+                        Argument = new Argument<string>()
+                    },
+                    new Option(
+                        "--region-id",
+                        "A unique id for the agent region")
+                    {
+                        Argument = new Argument<string>()
+                    },
+                    new Option(
+                        "--log-to-file",
+                        "Writes a log file")
+                    {
+                        Argument = new Argument<bool>()
+                    }
                 };
 
-                command.AddOption(new Option(
-                                      "--id",
-                                      "A unique id for the agent instance (e.g. its development environment id).",
-                                      new Argument<string>(defaultValue: () => Environment.MachineName)));
-                command.AddOption(new Option(
-                                      "--production",
-                                      "Specifies whether the agent is being run using production resources",
-                                      new Argument<bool>()));
-                command.AddOption(new Option(
-                                      "--language-service",
-                                      "Specifies whether the agent is being run in language service-only mode",
-                                      new Argument<bool>()));
-                command.AddOption(new Option(
-                                      new[] { "-k", "--key" },
-                                      "The encryption key",
-                                      new Argument<string>()));
-                command.AddOption(new Option(
-                                      new[] { "--ai-key", "--application-insights-key" },
-                                      "Application Insights key.",
-                                      new Argument<string>()));
-                command.AddOption(new Option(
-                                      "--region-id",
-                                      "A unique id for the agent region",
-                                      new Argument<string>()));
-                command.AddOption(new Option(
-                                      "--log-to-file",
-                                      "Writes a log file",
-                                      new Argument<bool>()));
+                command.Description = "Starts the Try .NET agent";
+
+                command.IsHidden = true;
 
                 command.Handler = CommandHandler.Create<InvocationContext, StartupOptions>((context, options) =>
                 {
@@ -245,7 +311,7 @@ namespace MLS.Agent.CommandLine
             Command Demo()
             {
                 var demoCommand = new Command(
-                    "demo", 
+                    "demo",
                     "Learn how to create Try .NET content with an interactive demo")
                 {
                     new Option("--output", "Where should the demo project be written to?")
@@ -265,29 +331,36 @@ namespace MLS.Agent.CommandLine
 
             Command GitHub()
             {
-                var argument = new Argument<string>();
+                var argument = new Argument<string>
+                {
+                    // System.CommandLine parameter binding does lookup by name,
+                    // so name the argument after the github command's string param
+                    Name = nameof(TryGitHubOptions.Repo)
+                };
 
-                // System.CommandLine parameter binding does lookup by name,
-                // so name the argument after the github command's string param
-                argument.Name = nameof(TryGitHubOptions.Repo);
+                var github = new Command("github", "Try a GitHub repo")
+                {
+                    argument
+                };
 
-                var github = new Command("github", "Try a GitHub repo", argument: argument);
                 github.IsHidden = true;
 
                 github.Handler = CommandHandler.Create<TryGitHubOptions, IConsole>((repo, console) => tryGithub(repo, console));
 
                 return github;
             }
-            
+
             Command Jupyter()
             {
-                var jupyterCommand = new Command("jupyter", "Starts dotnet try as a Jupyter kernel");
-                jupyterCommand.IsHidden = true;
+                var jupyterCommand = new Command("jupyter", "Starts dotnet try as a Jupyter kernel")
+                {
+                    IsHidden = true
+                };
                 var connectionFileArgument = new Argument<FileInfo>
-                                             {
-                                                 Name = "ConnectionFile"
-                                             }.ExistingOnly();
-                jupyterCommand.Argument = connectionFileArgument;
+                {
+                    Name = "ConnectionFile"
+                }.ExistingOnly();
+                jupyterCommand.AddArgument(connectionFileArgument);
 
                 jupyterCommand.Handler = CommandHandler.Create<JupyterOptions, IConsole, InvocationContext>((options, console, context) =>
                 {
@@ -313,14 +386,20 @@ namespace MLS.Agent.CommandLine
 
             Command Pack()
             {
-                var packCommand = new Command("pack", "Create a Try .NET package");
-                packCommand.IsHidden = true;
-                packCommand.Argument = new Argument<DirectoryInfo>();
-                packCommand.Argument.Name = nameof(PackOptions.PackTarget);
+                var packCommand = new Command("pack", "Create a Try .NET package")
+                {
+                    new Argument<DirectoryInfo>
+                    {
+                        Name = nameof(PackOptions.PackTarget)
+                    },
+                    new Option("--version", "The version of the Try .NET package")
+                    {
+                        Argument = new Argument<string>()
+                    },
+                    new Option("--enable-wasm", "Enables web assembly code execution")
+                };
 
-                packCommand.AddOption(new Option("--version",
-                                                 "The version of the Try .NET package",
-                                                 new Argument<string>()));
+                packCommand.IsHidden = true;
 
                 packCommand.Handler = CommandHandler.Create<PackOptions, IConsole>(
                     (options, console) =>
@@ -333,15 +412,19 @@ namespace MLS.Agent.CommandLine
 
             Command Install()
             {
-                var installCommand = new Command("install", "Install a Try .NET package");
-                installCommand.Argument = new Argument<string>();
-                installCommand.Argument.Name = nameof(InstallOptions.PackageName);
+                var installCommand = new Command("install", "Install a Try .NET package")
+                {
+                    new Argument<string>
+                    {
+                        Name = nameof(InstallOptions.PackageName)
+                    },
+                    new Option("--add-source")
+                    {
+                        Argument = new Argument<PackageSource>()
+                    }
+                };
+
                 installCommand.IsHidden = true;
-
-                var option = new Option("--add-source",
-                                        argument: new Argument<PackageSource>());
-
-                installCommand.AddOption(option);
 
                 installCommand.Handler = CommandHandler.Create<InstallOptions, IConsole>((options, console) => install(options, console));
 
@@ -352,14 +435,11 @@ namespace MLS.Agent.CommandLine
             {
                 var verifyCommand = new Command("verify", "Verify Markdown files in the target directory and its children.")
                 {
-                    Argument = new Argument<DirectoryInfo>(() => new DirectoryInfo(Directory.GetCurrentDirectory()))
-                    {
-                        Name = nameof(VerifyOptions.Dir).ToLower(),
-                        Description = "Specify the path to the root directory"
-                    }.ExistingOnly()
+                    dirArgument
                 };
 
-                verifyCommand.Handler = CommandHandler.Create<VerifyOptions, IConsole, StartupOptions>((options, console, startupOptions) =>
+                verifyCommand.Handler = CommandHandler.Create<VerifyOptions, IConsole, StartupOptions>(
+                    (options, console, startupOptions) =>
                 {
                     return verify(options, console, startupOptions);
                 });

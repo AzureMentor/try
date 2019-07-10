@@ -11,7 +11,6 @@ using Microsoft.DotNet.Try.Protocol.Tests;
 using MLS.Agent.CommandLine;
 using MLS.Agent.Markdown;
 using WorkspaceServer.Tests;
-using WorkspaceServer;
 using WorkspaceServer.Tests.TestUtility;
 using Xunit;
 using Xunit.Abstractions;
@@ -40,7 +39,7 @@ namespace MLS.Agent.Tests.Markdown
             [Fact]
             public async Task Renders_html_content_for_files_in_subdirectories()
             {
-                var html = await RenderHtml(("Subdirectory/Tutorial.md", "This is a sample *tutorial file*"));
+                var html = await RenderHtml(("SubDirectory/Tutorial.md", "This is a sample *tutorial file*"));
 
                 html.Should().Contain("<em>tutorial file</em>");
             }
@@ -136,7 +135,7 @@ namespace BasicConsoleApp
 ```")
                                   };
 
-                var project = new MarkdownProject(dirAccessor, PackageRegistry.CreateForHostedMode());
+                var project = new MarkdownProject(dirAccessor, await Default.PackageRegistry.ValueAsync());
                 project.TryGetMarkdownFile(new RelativeFilePath("docs/Readme.md"), out var markdownFile).Should().BeTrue();
                 var htmlDocument = new HtmlDocument();
                 htmlDocument.LoadHtml((await markdownFile.ToHtmlContentAsync()).ToString());
@@ -217,6 +216,48 @@ using System;
             }
 
             [Fact]
+            public async Task Should_emit_replace_injection_point_for_readonly_regions_from_source_file()
+            {
+                var expectedCode = @"Console.WriteLine(""Hello World!"");";
+
+                var codeContent = @"using System;
+
+namespace BasicConsoleApp
+{
+    class Program
+    {
+        static void MyProgram(string[] args)
+        {
+            #region code
+            Console.WriteLine(""Hello World!"");
+            #endregion
+        }
+    }
+}".EnforceLF();
+
+                var html = await RenderHtml(
+                    ("sample.csproj", ""),
+                    ("Program.cs", codeContent),
+                    ("Readme.md",
+                        @"```cs --source-file Program.cs --region code --editable false
+using System;
+```"));
+
+                var htmlDocument = new HtmlDocument();
+                htmlDocument.LoadHtml(html);
+                var code = htmlDocument.DocumentNode
+                    .SelectSingleNode("//pre/code");
+
+                var output = code.InnerHtml.EnforceLF();
+
+                code.Attributes["data-trydotnet-mode"].Value.Should().Be("include");
+                code.Attributes["data-trydotnet-injection-point"].Value.Should().Be("replace");
+                code.ParentNode.Attributes["style"].Should().BeNull();
+
+                output.Should().Contain($"{expectedCode.HtmlEncode()}");
+            }
+
+            [Fact]
             public async Task Should_emit_run_buttons_for_editable_blocks()
             {
                 var codeContent = @"using System;
@@ -278,6 +319,49 @@ using System;
                                           .SelectNodes("//button");
 
                 buttons.Should().BeNull();
+            }
+
+            [Fact]
+            public async Task Should_emit_math_inline_block_rendering()
+            {
+                var html = await RenderHtml(
+                    ("Readme.md", @"this is math inline $$\sum ^{n}_{i=0}\left(x_{i}+a_{i}y_{i}\right)$$"));
+
+                var htmlDocument = new HtmlDocument();
+                htmlDocument.LoadHtml(html);
+
+                var math = htmlDocument.DocumentNode
+                    .SelectSingleNode("//span");
+
+                math.HasClass("math").Should().BeTrue();
+                math.InnerText.Should().Match(@"\(\sum ^{n}_{i=0}\left(x_{i}+a_{i}y_{i}\right)\)");
+            }
+
+            [Fact]
+            public async Task Should_emit_math_block_rendering()
+            {
+                var html = await RenderHtml(
+                    ("Readme.md", @"$$
+\begin{equation}
+  \int_0^\infty \frac{x^3}{e^x-1}\,dx = \frac{\pi^4}{15}
+  \label{eq:sample}
+\end{equation}
+$$"));
+
+                var htmlDocument = new HtmlDocument();
+                htmlDocument.LoadHtml(html);
+
+                var math = htmlDocument.DocumentNode
+                    .SelectSingleNode("//div");
+
+                math.HasClass("math").Should().BeTrue();
+                math.InnerText.EnforceLF().Should().Match(@"
+\[
+\begin{equation}
+  \int_0^\infty \frac{x^3}{e^x-1}\,dx = \frac{\pi^4}{15}
+  \label{eq:sample}
+\end{equation}
+\]".EnforceLF());
             }
 
             [Fact]
@@ -425,8 +509,8 @@ This is the end of the file"));
             [Fact]
             public async Task Package_option_defaults_to_startup_options()
             {
-                var expectedPackage = "console";
-                var expectedPackageVersion = "1.2.3";
+                const string expectedPackage = "console";
+                const string expectedPackageVersion = "1.2.3";
 
                 var defaultCodeBlockAnnotations = new StartupOptions(
                     package: expectedPackage,
@@ -440,7 +524,7 @@ This is the end of the file"));
                         "),
                         ("Program.cs", "")
                     },
-                    new PackageRegistry(),
+                    await Default.PackageRegistry.ValueAsync(),
                     defaultCodeBlockAnnotations
                 );
 
@@ -464,7 +548,7 @@ This is the end of the file"));
 
                 var markdownProject = new MarkdownProject(
                     directoryAccessor,
-                    new PackageRegistry());
+                    await Default.PackageRegistry.ValueAsync());
 
                 var markdownFile = markdownProject.GetAllMarkdownFiles().Single();
                 var html = (await markdownFile.ToHtmlContentAsync()).ToString();

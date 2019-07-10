@@ -1,36 +1,22 @@
 // Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.DotNet.Try.Protocol;
 using Microsoft.DotNet.Try.Protocol.Tests;
-using WorkspaceServer.Servers.Roslyn;
-using WorkspaceServer.Servers.Scripting;
-using WorkspaceServer.Packaging;
 using Xunit;
 using Xunit.Abstractions;
 using Buffer = Microsoft.DotNet.Try.Protocol.Buffer;
-using Package = WorkspaceServer.Packaging.Package;
 
 namespace WorkspaceServer.Tests
 {
-    public class RoslynWorkspaceServerScriptIntellisenseTests : WorkspaceServerTestsCore
+    public class RoslynWorkspaceServerScriptIntellisenseTests : RoslynWorkspaceServerTestsCore
     {
         public RoslynWorkspaceServerScriptIntellisenseTests(ITestOutputHelper output) : base(output)
         {
         }
-
-        protected override  Task<(ICodeRunner runner, Package workspace)> GetRunnerAndWorkspaceBuild(string testName = null)
-        {
-            return Task.FromResult(((ICodeRunner)new ScriptingWorkspaceServer(),(Package) new NonrebuildablePackage("script")));
-        }
-        protected override ILanguageService GetLanguageService(
-            [CallerMemberName] string testName = null) => new RoslynWorkspaceServer(
-            PackageRegistry.CreateForHostedMode());
 
         [Fact]
         public async Task Get_signature_help_for_invalid_location_return_empty()
@@ -62,9 +48,9 @@ public class Program
 }";
             var (processed, markLocation) = CodeManipulation.ProcessMarkup(code);
 
-            var ws = new Workspace(buffers: new[] { new Buffer("", processed, markLocation) });
-            var request = new WorkspaceRequest(ws, activeBufferId: "");
-            var server = GetLanguageService();
+            var ws = new Workspace(buffers: new[] { new Buffer("file.csx", processed, markLocation) });
+            var request = new WorkspaceRequest(ws, activeBufferId: "file.csx");
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetSignatureHelp(request);
             result.Should().NotBeNull();
             result.Signatures.Should().BeNullOrEmpty();
@@ -99,9 +85,9 @@ public class Program
   }
 }";
             var (processed, markLocation) = CodeManipulation.ProcessMarkup(code);
-            var ws = new Workspace( buffers: new[] { new Buffer("", processed, markLocation) });
-            var request = new WorkspaceRequest(ws, activeBufferId: "");
-            var server = GetLanguageService();
+            var ws = new Workspace( buffers: new[] { new Buffer("file.csx", processed, markLocation) });
+            var request = new WorkspaceRequest(ws, activeBufferId: "file.csx");
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetSignatureHelp(request);
             result.Signatures.Should().NotBeEmpty();
             result.Signatures.First().Label.Should().Be("IEnumerable<TSource> Enumerable.Take<TSource>(IEnumerable<TSource> source, int count)");
@@ -115,7 +101,7 @@ public class Program
 
             var ws = new Workspace(buffers: new[] { new Buffer("default.cs", processed, markLocation) });
             var request = new WorkspaceRequest(ws, activeBufferId: "default.cs");
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetCompletionList(request);
 
             result.Items.Should().NotBeNullOrEmpty();
@@ -128,7 +114,7 @@ public class Program
             var (processed, markLocation) = CodeManipulation.ProcessMarkup("var xa = 3;\n$$a");
             var ws = new Workspace(buffers: new[] { new Buffer("default.cs", processed, markLocation) });
             var request = new WorkspaceRequest(ws, activeBufferId: "default.cs");
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetCompletionList(request);
 
             result.Items.Should().NotBeNullOrEmpty();
@@ -160,7 +146,7 @@ public class Program
 
 
             var request = new WorkspaceRequest(ws, activeBufferId: "program.cs@nesting");
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetSignatureHelp(request);
 
             result.Signatures.Should().NotBeEmpty();
@@ -179,7 +165,7 @@ public class Program
             var ws = new Workspace(buffers: new[] { new Buffer("program.cs", processed, markLocation) });
 
             var request = new WorkspaceRequest(ws, activeBufferId: "program.cs");
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetSignatureHelp(request);
             result.Signatures.Should().NotBeEmpty();
             result.Signatures.First().Label.Should().Be("void C.Foo()");
@@ -190,7 +176,7 @@ public class Program
         {
             var ws = new Workspace(buffers: new[] { new Buffer("default.cs", "System.Threading.Tasks.", 23) });
             var request = new WorkspaceRequest(ws, activeBufferId: "default.cs");
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
             var result = await server.GetCompletionList(request);
             var taskCompletionItem = result.Items.First(i => i.DisplayText == "Task");
 
@@ -207,7 +193,7 @@ public class Program
 
             var request = new WorkspaceRequest(ws, activeBufferId: "program.cs");
 
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
 
             var result = await server.GetCompletionList(request);
 
@@ -221,7 +207,7 @@ public class Program
 
             var request = new WorkspaceRequest(ws, activeBufferId: "program.cs");
 
-            var server = GetLanguageService();
+            var server = await GetLanguageServiceAsync();
 
             var result = await server.GetSignatureHelp(request);
 

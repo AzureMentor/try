@@ -29,13 +29,13 @@ using Disposable = System.Reactive.Disposables.Disposable;
 
 namespace WorkspaceServer.Packaging
 {
-    public abstract class Package : 
+    public abstract class Package :
         PackageBase,
         ICreateWorkspaceForLanguageServices,
         ICreateWorkspaceForRun
     {
         internal const string DesignTimeBuildBinlogFileName = "package_designTimeBuild.binlog";
-        private static readonly object _createDirectoryLock = new object();
+
 
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> _packageBuildSemaphores = new ConcurrentDictionary<string, SemaphoreSlim>();
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> _packagePublishSemaphores = new ConcurrentDictionary<string, SemaphoreSlim>();
@@ -62,6 +62,9 @@ namespace WorkspaceServer.Packaging
 
             Log.Info("Packages path is {DefaultWorkspacesDirectory}", DefaultPackagesDirectory);
         }
+
+        private int buildCount = 0;
+        private int publishCount = 0;
 
         private bool? _isWebProject;
         private bool? _isUnitTestProject;
@@ -92,7 +95,7 @@ namespace WorkspaceServer.Packaging
             IScheduler buildThrottleScheduler = null) : base(name, initializer, directory)
         {
             Initializer = initializer ?? new PackageInitializer("console", Name);
-        
+
             _log = new Logger($"{nameof(Package)}:{Name}");
             _buildThrottleScheduler = buildThrottleScheduler ?? TaskPoolScheduler.Default;
 
@@ -105,20 +108,35 @@ namespace WorkspaceServer.Packaging
             SetupWorkspaceCreationFromBuildChannel();
             SetupWorkspaceCreationFromDesignTimeBuildChannel();
             TryLoadDesignTimeBuildFromBuildLog();
-            
+
             _buildSemaphore = _packageBuildSemaphores.GetOrAdd(Name, _ => new SemaphoreSlim(1, 1));
             _publishSemaphore = _packagePublishSemaphores.GetOrAdd(Name, _ => new SemaphoreSlim(1, 1));
             RoslynWorkspace = null;
         }
 
-        private static void LoadDesignTimeBuildFromBuildLogFile(Package package, FileSystemInfo binLog)
+        private void TryLoadDesignTimeBuildFromBuildLog()
+        {
+            if (Directory.Exists)
+            {
+                var binLog = this.FindLatestBinLog();
+                if (binLog != null)
+                {
+                    LoadDesignTimeBuildFromBuildLogFile(this, binLog).Wait();
+                }
+            }
+        }
+        private static async Task LoadDesignTimeBuildFromBuildLogFile(Package package, FileSystemInfo binLog)
         {
             var projectFile = package.GetProjectFile();
-            if (projectFile != null && 
+            if (projectFile != null &&
                 binLog.LastWriteTimeUtc >= projectFile.LastWriteTimeUtc)
             {
-                var manager = new AnalyzerManager();
-                var results = manager.Analyze(binLog.FullName);
+                AnalyzerResults results;
+                using (await FileLock.TryCreateAsync(package.Directory))
+                {
+                    var manager = new AnalyzerManager();
+                    results = manager.Analyze(binLog.FullName);
+                }
 
                 if (results.Count == 0)
                 {
@@ -143,17 +161,7 @@ namespace WorkspaceServer.Packaging
             }
         }
 
-        private void TryLoadDesignTimeBuildFromBuildLog()
-        {
-            if (Directory.Exists)
-            {
-                var binLog = this.FindLatestBinLog();
-                if (binLog != null)
-                {
-                    LoadDesignTimeBuildFromBuildLogFile(this, binLog);
-                }
-            }
-        }
+      
 
         private DateTimeOffset? LastDesignTimeBuild { get; set; }
 
@@ -182,7 +190,7 @@ namespace WorkspaceServer.Packaging
                                ?.Attribute("Sdk")
                                ?.Value == "Microsoft.NET.Sdk.Web";
 
-                    _isWebProject = isAspNetCore2 || isAspNetCore3 ;
+                    _isWebProject = isAspNetCore2 || isAspNetCore3;
                 }
 
                 return _isWebProject ?? false;
@@ -194,7 +202,7 @@ namespace WorkspaceServer.Packaging
         public FileInfo EntryPointAssemblyPath => _entryPointAssemblyPath ?? (_entryPointAssemblyPath = this.GetEntryPointAssemblyPath(IsWebProject));
 
         public string TargetFramework => _targetFramework ?? (_targetFramework = this.GetTargetFramework());
-        
+
         public Task<Workspace> CreateRoslynWorkspaceForRunAsync(Budget budget)
         {
             var shouldBuild = ShouldDoFullBuild();
@@ -422,7 +430,7 @@ namespace WorkspaceServer.Packaging
             {
                 if (ShouldDoDesignTimeBuild())
                 {
-                    DesignTimeBuild();
+                    await DesignTimeBuild();
                 }
                 else
                 {
@@ -456,7 +464,11 @@ namespace WorkspaceServer.Packaging
                 {
                     operation.Info("Attempting building package {name}", Name);
 
-                    var buildInProgress = _buildSemaphore.CurrentCount == 0;
+                    // When a build finishes, buildCount is reset to 0. If, when we increment
+                    // the value, we get a value > 1, someone else has already started another
+                    // build
+                    var buildInProgress = Interlocked.Increment(ref buildCount) > 1;
+
                     await _buildSemaphore.WaitAsync();
 
                     using (Disposable.Create(() => _buildSemaphore.Release()))
@@ -467,7 +479,10 @@ namespace WorkspaceServer.Packaging
                             return;
                         }
 
-                        await DotnetBuild();
+                        using (await FileLock.TryCreateAsync(Directory))
+                        {
+                            await DotnetBuild();
+                        }
                     }
 
                     operation.Info("Workspace built");
@@ -481,16 +496,18 @@ namespace WorkspaceServer.Packaging
 
                 var binLog = this.FindLatestBinLog();
                 await binLog.WaitForFileAvailable();
-                LoadDesignTimeBuildFromBuildLogFile(this, binLog);
+                await LoadDesignTimeBuildFromBuildLogFile(this, binLog);
+
+                Interlocked.Exchange(ref buildCount, 0);
             }
         }
-     
+
         protected async Task Publish()
         {
             using (var operation = _log.OnEnterAndConfirmOnExit())
             {
                 operation.Info("Attempting to publish package {name}", Name);
-                var publishInProgress = _publishSemaphore.CurrentCount == 0;
+                var publishInProgress = Interlocked.Increment(ref publishCount) > 1;
                 await _publishSemaphore.WaitAsync();
 
                 if (publishInProgress)
@@ -512,94 +529,20 @@ namespace WorkspaceServer.Packaging
                 operation.Info("Workspace published");
                 operation.Succeed();
                 PublicationTime = Clock.Current.Now();
+                Interlocked.Exchange(ref publishCount, 0);
             }
         }
 
-        public static async Task<Package> Copy(
-            Package fromPackage,
-            string folderNameStartsWith = null,
-            bool isRebuildable = false,
-            IScheduler buildThrottleScheduler = null,
-            DirectoryInfo parentDirectory = null)
-        {
-            if (fromPackage == null)
-            {
-                throw new ArgumentNullException(nameof(fromPackage));
-            }
 
-            await fromPackage.EnsureReady(new Budget());
-
-            folderNameStartsWith = folderNameStartsWith ?? fromPackage.Name;
-            parentDirectory = parentDirectory ?? fromPackage.Directory.Parent;
-
-            var destination =
-                CreateDirectory(folderNameStartsWith,
-                                parentDirectory);
-
-            fromPackage.Directory.CopyTo(destination);
-
-            var binLogs = destination.GetFiles("*.binlog");
-
-            foreach (var fileInfo in binLogs)
-            {
-                fileInfo.Delete();
-            }
-
-            Package copy;
-            if (isRebuildable)
-            {
-                copy = new RebuildablePackage(directory: destination, name: destination.Name, buildThrottleScheduler: buildThrottleScheduler)
-                       {
-                           IsDirectoryCreated = true
-                       };
-            }
-            else
-            {
-                copy = new NonrebuildablePackage(directory: destination, name: destination.Name, buildThrottleScheduler: buildThrottleScheduler)
-                       {
-                           IsDirectoryCreated = true
-                       };
-            }
-
-            Log.Info(
-                "Copied workspace {from} to {to}",
-                fromPackage,
-                copy);
-
-            return copy;
-        }
-
-        public static DirectoryInfo CreateDirectory(
-            string folderNameStartsWith,
-            DirectoryInfo parentDirectory = null)
-        {
-            if (string.IsNullOrWhiteSpace(folderNameStartsWith))
-            {
-                throw new ArgumentException("Value cannot be null or whitespace.", nameof(folderNameStartsWith));
-            }
-
-            parentDirectory = parentDirectory ?? DefaultPackagesDirectory;
-
-            DirectoryInfo created;
-
-            lock (_createDirectoryLock)
-            {
-                if (!parentDirectory.Exists)
-                {
-                    parentDirectory.Create();
-                }
-
-                var existingFolders = parentDirectory.GetDirectories($"{folderNameStartsWith}.*");
-
-                created = parentDirectory.CreateSubdirectory($"{folderNameStartsWith}.{existingFolders.Length + 1}");
-            }
-
-            return created;
-        }
 
         public override string ToString()
         {
             return $"{Name} ({Directory.FullName})";
+        }
+
+        public Task<Workspace> CreateRoslynWorkspaceAsync(Budget budget)
+        {
+            return CreateRoslynWorkspaceForRunAsync(budget);
         }
 
         protected SyntaxTree CreateInstrumentationEmitterSyntaxTree()
@@ -635,22 +578,27 @@ namespace WorkspaceServer.Packaging
                    || DesignTimeBuildResult.Succeeded == false;
         }
 
-        protected AnalyzerResult DesignTimeBuild()
+        protected async Task<AnalyzerResult> DesignTimeBuild()
         {
             using (var operation = _log.OnEnterAndConfirmOnExit())
             {
+                AnalyzerResult result;
                 var csProj = this.GetProjectFile();
                 var logWriter = new StringWriter();
-                var manager = new AnalyzerManager(new AnalyzerManagerOptions
-                {
-                    LogWriter = logWriter
-                });
 
-                var analyzer = manager.GetProject(csProj.FullName);
-                analyzer.AddBinaryLogger(Path.Combine(Directory.FullName, DesignTimeBuildBinlogFileName));
-                var languageVersion = csProj.SuggestedLanguageVersion();
-                analyzer.SetGlobalProperty("langVersion", languageVersion);
-                var result = analyzer.Build().Results.First();
+                using (await FileLock.TryCreateAsync(Directory))
+                {
+                    var manager = new AnalyzerManager(new AnalyzerManagerOptions
+                    {
+                        LogWriter = logWriter
+                    });
+                    var analyzer = manager.GetProject(csProj.FullName);
+                    analyzer.AddBinaryLogger(Path.Combine(Directory.FullName, DesignTimeBuildBinlogFileName));
+                    var languageVersion = csProj.SuggestedLanguageVersion();
+                    analyzer.SetGlobalProperty("langVersion", languageVersion);
+                    result = analyzer.Build().Results.First();
+                }
+
                 DesignTimeBuildResult = result;
                 LastDesignTimeBuild = Clock.Current.Now();
                 if (result.Succeeded == false)

@@ -9,7 +9,6 @@
 *.user
 *.userosscache
 *.sln.docstates
-*NCrunch*
 .trydotnet-*
 
 # User-specific files (MonoDevelop/Xamarin Studio)
@@ -31,6 +30,7 @@ bld/
 [Bb]in/
 [Oo]bj/
 [Ll]og/
+.packages
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -348,3 +348,22 @@ healthchecksdb
 
 # Backup folder for Package Reference Convert tool in Visual Studio 2017
 MigrationBackup/
+
+wwwroot/api/
+
+wwwroot/client/
+
+MLS\.Agent/wwwroot/api/
+
+MLS\.Agent/wwwroot/client/
+
+*.trx
+
+
+Microsoft\.DotNet\.Try\.js/\.rpt2_cache/
+
+Microsoft\.DotNet\.Try\.js/dist/
+
+docs/\.ionide/
+
+\.ionide/

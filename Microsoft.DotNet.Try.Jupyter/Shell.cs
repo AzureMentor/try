@@ -23,7 +23,6 @@ namespace Microsoft.DotNet.Try.Jupyter
         private readonly string _ioPubAddress;
         private readonly SignatureValidator _signatureValidator;
         private readonly CompositeDisposable _disposables;
-        private readonly MessageBuilder _messageBuilder;
         private readonly MessageSender _shellSender;
         private readonly MessageSender _ioPubSender;
         private readonly string _stdInAddress;
@@ -64,7 +63,6 @@ namespace Microsoft.DotNet.Try.Jupyter
                                _stdIn,
                                _control
                            };
-            _messageBuilder = new MessageBuilder();
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -83,20 +81,23 @@ namespace Microsoft.DotNet.Try.Jupyter
                     activity.Info("Received: {message}", message.ToJson());
 
                     var status = new RequestHandlerStatus(message.Header, new MessageSender(_ioPubSocket, _signatureValidator));
-                    status.SetAsBusy();
+                    
 
                     switch (message.Header.MessageType)
                     {
                         case MessageTypeValues.KernelInfoRequest:
+                            status.SetAsBusy();
                             HandleKernelInfoRequest(message);
+                            status.SetAsIdle();
                             break;
 
                         case MessageTypeValues.KernelShutdownRequest:
+                            status.SetAsBusy();
+                            status.SetAsIdle();
                             break;
 
                         default:
                             var context = new JupyterRequestContext(
-                                _messageBuilder,
                                 _shellSender,
                                 _ioPubSender,
                                 message,
@@ -107,7 +108,7 @@ namespace Microsoft.DotNet.Try.Jupyter
                             break;
                     }
 
-                    status.SetAsIdle();
+                  
                 }
             }
         }
@@ -118,31 +119,12 @@ namespace Microsoft.DotNet.Try.Jupyter
             return Task.CompletedTask;
         }
 
-        private void HandleKernelInfoRequest(Message message)
+        private void HandleKernelInfoRequest(Message request)
         {
-            var kernelInfoReply = new KernelInfoReply
-                                  {
-                                      ProtocolVersion = "5.1.0",
-                                      Implementation = ".NET",
-                                      ImplementationVersion = "5.1.0",
-                                      LanguageInfo = new LanguageInfo
-                                                     {
-                                                         Name = "C#",
-                                                         Version = typeof(string).Assembly.ImageRuntimeVersion.Substring(1),
-                                                         MimeType = "text/x-csharp",
-                                                         FileExtension = ".cs",
-                                                         PygmentsLexer = "c#"
-                                                     }
-                                  };
+            var kernelInfoReply = new KernelInfoReply("5.1.0", ".NET", "5.1.0", new CSharpLanguageInfo());
 
-            var replyMessage = new Message
-                               {
-                                   Identifiers = message.Identifiers,
-                                   Signature = message.Signature,
-                                   ParentHeader = message.Header,
-                                   Header = _messageBuilder.CreateHeader(MessageTypeValues.KernelInfoReply, message.Header.Session),
-                                   Content = kernelInfoReply
-                               };
+            var replyMessage = Message.CreateResponse(kernelInfoReply, request);
+
 
             _shellSender.Send(replyMessage);
         }

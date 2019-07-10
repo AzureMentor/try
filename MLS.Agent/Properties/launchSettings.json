@@ -18,7 +18,7 @@
     },
     "MLS.Agent": {
       "commandName": "Project",
-      "commandLineArgs": "../docs",
+      "commandLineArgs": "try C:/Users/dicolomb/source/repos/Public/TryDotNet.XamU.CSharp",
       "launchBrowser": true,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
@@ -31,6 +31,10 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "Jupyter": {
+      "commandName": "Project",
+      "commandLineArgs": "jupyter ../MLS.Agent.Tests/kernel_connection_file.json"
     }
   }
 }

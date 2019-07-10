@@ -16,7 +16,8 @@ namespace MLS.Agent.Markdown
         {
             if (block.Annotations is LocalCodeBlockAnnotations localOptions)
             {
-                var absolutePath = directoryAccessor.GetFullyQualifiedPath(localOptions.SourceFile).FullName;
+                var file = localOptions.SourceFile ?? localOptions.DestinationFile;
+                var absolutePath = directoryAccessor.GetFullyQualifiedPath(file).FullName;
                 var bufferId = new BufferId(absolutePath, block.Annotations.Region);
                 return new Buffer(bufferId, block.SourceCode);
             }
@@ -29,6 +30,17 @@ namespace MLS.Agent.Markdown
             return
                 (block.Annotations as LocalCodeBlockAnnotations)?.Project?.FullName ??
                 block.Annotations?.Package;
+        }
+
+        public static string PackageName(this AnnotatedCodeBlock block)
+        {
+            return block.Annotations?.Package;
+        }
+        
+        public static string Language(this AnnotatedCodeBlock block)
+        {
+            return
+                block.Annotations?.NormalizedLanguage;
         }
     }
 }

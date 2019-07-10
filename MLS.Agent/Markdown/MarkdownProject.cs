@@ -5,7 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reactive.Disposables;
+using System.Threading.Tasks;
 using Markdig;
+using Markdig.Extensions.Mathematics;
 using Microsoft.DotNet.Try.Markdown;
 using Recipes;
 using WorkspaceServer;
@@ -40,6 +43,11 @@ namespace MLS.Agent.Markdown
                 return Enumerable.Empty<RelativeFilePath>();
             }
 
+            public IEnumerable<RelativeFilePath> GetAllFiles()
+            {
+                return Enumerable.Empty<RelativeFilePath>();
+            }
+
             public IEnumerable<RelativeDirectoryPath> GetAllDirectoriesRecursively()
             {
                 return Enumerable.Empty<RelativeDirectoryPath>();
@@ -55,11 +63,16 @@ namespace MLS.Agent.Markdown
                 return this;
             }
 
+            public Task<IDisposable> TryLockAsync()
+            {
+                return Task.FromResult(Disposable.Empty);
+            }
+
             public void WriteAllText(RelativeFilePath path, string text)
             {
             }
         }
-      
+
         internal IDirectoryAccessor DirectoryAccessor { get; }
 
         private readonly PackageRegistry _packageRegistry;
@@ -73,7 +86,7 @@ namespace MLS.Agent.Markdown
         }
 
         public MarkdownProject(
-            IDirectoryAccessor directoryAccessor, 
+            IDirectoryAccessor directoryAccessor,
             PackageRegistry packageRegistry,
             IDefaultCodeBlockAnnotations defaultAnnotations = null)
         {
@@ -89,7 +102,7 @@ namespace MLS.Agent.Markdown
 
         public bool TryGetMarkdownFile(RelativeFilePath path, out MarkdownFile markdownFile)
         {
-            if (!DirectoryAccessor.FileExists(path))
+            if (!DirectoryAccessor.FileExists(path) || path.Extension != ".md")
             {
                 markdownFile = null;
                 return false;
@@ -106,11 +119,12 @@ namespace MLS.Agent.Markdown
                 var relativeAccessor = DirectoryAccessor.GetDirectoryAccessorForRelativePath(filePath.Directory);
 
                 return new MarkdownPipelineBuilder()
-                    .UseAdvancedExtensions()
                     .UseCodeBlockAnnotations(
-                        relativeAccessor, 
-                        _packageRegistry, 
+                        relativeAccessor,
+                        _packageRegistry,
                         defaultAnnotations)
+                    .UseMathematics()
+                    .UseAdvancedExtensions()
                     .Build();
             });
         }

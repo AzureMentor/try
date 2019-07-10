@@ -3,11 +3,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using Assent;
 using Microsoft.DotNet.Try.Jupyter.Protocol;
-using NetMQ;
-using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace Microsoft.DotNet.Try.Jupyter.Tests
@@ -29,34 +26,22 @@ namespace Microsoft.DotNet.Try.Jupyter.Tests
         {
             var socket = new TextSocket();
             var sender = new MessageSender(socket, new SignatureValidator("key", "HMACSHA256"));
-            var kernelInfoReply = new KernelInfoReply
-                                  {
-                                      ProtocolVersion = "5.3",
-                                      Implementation = ".NET",
-                                      ImplementationVersion = "0.0.3",
-                                      LanguageInfo = new LanguageInfo
-                                                     {
-                                                         Name = "C#",
-                                                         Version = typeof(string).Assembly.ImageRuntimeVersion.Substring(1),
-                                                         MimeType = "text/x-csharp",
-                                                         FileExtension = ".cs",
-                                                         PygmentsLexer = "c#"
-                                                     }
-                                  };
-            var header = new Header
-                         {
-                             Username = Constants.USERNAME,
-                             Session = "test session",
-                             MessageId = Guid.Empty.ToString(),
-                             MessageType = MessageTypeValues.KernelInfoReply,
-                             Date = DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                             Version = "5.3"
-                         };
-            var replyMessage = new Message
-                               {
-                                   Header = header,
-                                   Content = kernelInfoReply
-                               };
+            var kernelInfoReply = new KernelInfoReply(
+
+                                       "5.3",
+                                      ".NET",
+                                      "0.0.3",
+                                       new LanguageInfo(
+                                           name: "C#",
+                                           version: typeof(string).Assembly.ImageRuntimeVersion.Substring(1),
+                                           mimeType: "text/x-csharp",
+                                           fileExtension: ".cs",
+                                           pygmentsLexer: "c#"
+                                       ));
+            var header = new Header(messageType: MessageTypeValues.KernelInfoReply, messageId: Guid.Empty.ToString(),
+                version: "5.3", username: Constants.USERNAME, session: "test session",
+                date: DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+            var replyMessage = new Message(header, content: kernelInfoReply);
             sender.Send(replyMessage);
 
             var encoded = socket.GetEncodedMessage();
@@ -70,31 +55,21 @@ namespace Microsoft.DotNet.Try.Jupyter.Tests
             var sender = new MessageSender(socket, new SignatureValidator("key", "HMACSHA256"));
             var transient = new Dictionary<string, object> { { "display_id", "none" } };
             var output = "some result";
-            var executeResult = new ExecuteResult
-            {
-                Data = new JObject
-                {
+            var executeResult = new ExecuteResult(
+                12,
+                transient: transient,
+                data: new Dictionary<string, object> {
                     { "text/html", output },
                     { "text/plain", output }
-                },
-                Transient = transient,
-                ExecutionCount = 12
-            };
 
-            var header = new Header
-            {
-                Username = Constants.USERNAME,
-                Session = "test session",
-                MessageId = Guid.Empty.ToString(),
-                MessageType = MessageTypeValues.ExecuteResult,
-                Date = DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                Version = "5.3"
-            };
-            var replyMessage = new Message
-            {
-                Header = header,
-                Content = executeResult
-            };
+                });
+
+            var header = new Header(messageType: MessageTypeValues.ExecuteResult, messageId: Guid.Empty.ToString(),
+                version: "5.3", username: Constants.USERNAME, session: "test session",
+                date: DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+
+            var replyMessage = new Message(header, content: executeResult);
+
             sender.Send(replyMessage);
 
             var encoded = socket.GetEncodedMessage();
@@ -108,30 +83,39 @@ namespace Microsoft.DotNet.Try.Jupyter.Tests
             var sender = new MessageSender(socket, new SignatureValidator("key", "HMACSHA256"));
             var transient = new Dictionary<string, object> { { "display_id", "none" } };
             var output = "some result";
-            var displayData = new DisplayData()
-            {
-                Data = new JObject
+            var displayData = new DisplayData(
+                data: new Dictionary<string, object>
                 {
-                    { "text/html", output },
-                    { "text/plain", output }
+                    {"text/html", output},
+                    {"text/plain", output}
                 },
-                Transient = transient
-            };
+                transient: transient);
 
-            var header = new Header
-            {
-                Username = Constants.USERNAME,
-                Session = "test session",
-                MessageId = Guid.Empty.ToString(),
-                MessageType = MessageTypeValues.DisplayData,
-                Date = DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                Version = "5.3"
-            };
-            var replyMessage = new Message
-            {
-                Header = header,
-                Content = displayData
-            };
+
+            var header = new Header(messageType: MessageTypeValues.DisplayData, messageId: Guid.Empty.ToString(),
+                version: "5.3", username: Constants.USERNAME, session: "test session",
+                date: DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+            var replyMessage = new Message(header, content: displayData);
+
+            sender.Send(replyMessage);
+
+            var encoded = socket.GetEncodedMessage();
+            this.Assent(encoded, _configuration);
+        }
+
+        [Fact]
+        public void Complete_reply_contract_has_not_been_broken()
+        {
+            var socket = new TextSocket();
+            var sender = new MessageSender(socket, new SignatureValidator("key", "HMACSHA256"));
+
+            var completeReply = new CompleteReply(0, 0, matches: new List<string> { "Write", "WriteLine" });
+
+            var header = new Header(messageType: MessageTypeValues.CompleteReply, messageId: Guid.Empty.ToString(),
+                version: "5.3", username: Constants.USERNAME, session: "test session",
+                date: DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+
+            var replyMessage = new Message(header, content: completeReply);
             sender.Send(replyMessage);
 
             var encoded = socket.GetEncodedMessage();
@@ -145,51 +129,25 @@ namespace Microsoft.DotNet.Try.Jupyter.Tests
             var sender = new MessageSender(socket, new SignatureValidator("key", "HMACSHA256"));
             var transient = new Dictionary<string, object> { { "display_id", "none" } };
             var output = "some result";
-            var displayData = new UpdateDisplayData()
-            {
-                Data = new JObject
+            var displayData = new UpdateDisplayData
+            (
+                data: new Dictionary<string, object>
                 {
                     { "text/html", output },
                     { "text/plain", output }
                 },
-                Transient = transient
-            };
+                transient: transient
+            );
 
-            var header = new Header
-            {
-                Username = Constants.USERNAME,
-                Session = "test session",
-                MessageId = Guid.Empty.ToString(),
-                MessageType = MessageTypeValues.UpdateDisplayData,
-                Date = DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                Version = "5.3"
-            };
-            var replyMessage = new Message
-            {
-                Header = header,
-                Content = displayData
-            };
+            var header = new Header(messageType: MessageTypeValues.UpdateDisplayData, messageId: Guid.Empty.ToString(),
+                version: "5.3", username: Constants.USERNAME, session: "test session",
+                date: DateTime.MinValue.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+
+            var replyMessage = new Message(header, content: displayData);
             sender.Send(replyMessage);
 
             var encoded = socket.GetEncodedMessage();
             this.Assent(encoded, _configuration);
-        }
-
-        private class TextSocket : IOutgoingSocket
-        {
-            readonly StringBuilder _buffer = new StringBuilder();
-
-            public bool TrySend(ref Msg msg, TimeSpan timeout, bool more)
-            {
-                var decoded = SendReceiveConstants.DefaultEncoding.GetString(msg.Data);
-                _buffer.AppendLine($"data: {decoded} more: {more}");
-                return true;
-            }
-
-            public string GetEncodedMessage()
-            {
-                return _buffer.ToString();
-            }
         }
     }
 }

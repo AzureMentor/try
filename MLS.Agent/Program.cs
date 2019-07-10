@@ -6,24 +6,21 @@ using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using MLS.Agent.Tools;
-using MLS.Repositories;
 using Pocket;
 using Pocket.For.ApplicationInsights;
 using Recipes;
 using Serilog.Sinks.RollingFileAlternate;
 using System;
-using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Microsoft.DotNet.Try.Jupyter;
-using WorkspaceServer.Servers.Roslyn;
 using static Pocket.Logger<MLS.Agent.Program>;
 using SerilogLoggerConfiguration = Serilog.LoggerConfiguration;
-using WorkspaceServer;
 using MLS.Agent.CommandLine;
+using WorkspaceServer.Servers;
 
 namespace MLS.Agent
 {
@@ -33,7 +30,7 @@ namespace MLS.Agent
 
         public static async Task<int> Main(string[] args)
         {
-            return await CommandLineParser.Create().InvokeAsync(args);
+            return await CommandLineParser.Create( _serviceCollection ).InvokeAsync(args);
         }
 
         public static X509Certificate2 ParseKey(string base64EncodedKey)
@@ -42,10 +39,10 @@ namespace MLS.Agent
             return new X509Certificate2(bytes);
         }
 
-        private static readonly Assembly[] assembliesEmittingPocketLoggerLogs = {
+        private static readonly Assembly[] _assembliesEmittingPocketLoggerLogs = {
             typeof(Startup).Assembly,
             typeof(AsyncLazy<>).Assembly,
-            typeof(RoslynWorkspaceServer).Assembly,
+            typeof(IWorkspaceServer).Assembly,
             typeof(Shell).Assembly
         };
 
@@ -75,7 +72,7 @@ namespace MLS.Agent
 
                 var subscription = LogEvents.Subscribe(
                     e => log.Information(e.ToLogString()),
-                    assembliesEmittingPocketLoggerLogs);
+                    _assembliesEmittingPocketLoggerLogs);
 
                 disposables.Add(subscription);
                 disposables.Add(log);
@@ -85,7 +82,7 @@ namespace MLS.Agent
             {
                 disposables.Add(
                     LogEvents.Subscribe(e => Console.WriteLine(e.ToLogString()),
-                                        assembliesEmittingPocketLoggerLogs));
+                                        _assembliesEmittingPocketLoggerLogs));
             }
 
             TaskScheduler.UnobservedTaskException += (sender, args) =>
@@ -100,7 +97,7 @@ namespace MLS.Agent
                 {
                     InstrumentationKey = options.ApplicationInsightsKey
                 };
-                disposables.Add(telemetryClient.SubscribeToPocketLogger(assembliesEmittingPocketLoggerLogs));
+                disposables.Add(telemetryClient.SubscribeToPocketLogger(_assembliesEmittingPocketLoggerLogs));
             }
 
             Log.Event("AgentStarting");
@@ -120,9 +117,10 @@ namespace MLS.Agent
                 Log.Trace("Received Key: {key}", options.Key);
             }
 
+
             var webHost = new WebHostBuilder()
                           .UseKestrel()
-                          .UseContentRoot(Directory.GetCurrentDirectory())
+                          .UseContentRoot(Path.GetDirectoryName(typeof(Program).Assembly.Location))
                           .ConfigureServices(c =>
                           {
                               if (!string.IsNullOrEmpty(options.ApplicationInsightsKey))
@@ -139,6 +137,7 @@ namespace MLS.Agent
                           })
                           .UseEnvironment(options.EnvironmentName)
                           .UseStartup<Startup>()
+                          .ConfigureUrlUsingPort(options.Port)
                           .Build();
 
             return webHost;

@@ -1,8 +1,10 @@
 # CI and PR triggers
 trigger:
 - master
+- feature/*
 pr:
 - master
+- feature/*
 
 variables:
   - name: _TeamName
@@ -14,7 +16,9 @@ variables:
   - name: _DotNetArtifactsCategory
     value: .NETCore
   - name: BlazorTemplateVersion
-    value: 0.7.0
+    value: 3.0.0-preview6.19307.2
+  - name: DotNetSdkVersion
+    value: 3.0.100-preview6-012264
   - name: TryDotNetPackagesPath
     value: $(Build.SourcesDirectory)/artifacts/.trydotnet/packages
 
@@ -66,7 +70,14 @@ jobs:
       - task: NodeTool@0
         displayName: Add NodeJS/npm
         inputs:
-          versionSpec: '>=11'
+          versionSpec: '>=12'
+
+      - task: UseDotNet@2
+        displayName: Add dotnet
+        inputs:
+          packageType: sdk
+          version: $(DotNetSdkVersion)
+          installationPath: $(Agent.ToolsDirectory)\dotnet
 
       - script: dotnet new -i Microsoft.AspNetCore.Blazor.Templates::$(BlazorTemplateVersion)
         displayName: Install Blazor templates
@@ -87,6 +98,15 @@ jobs:
         displayName: Build / Test
         env:
           TRYDOTNET_PACKAGES_PATH: $(TryDotNetPackagesPath)
+
+      - task: PublishTestResults@2
+        displayName: Publish NPM Test Results
+        inputs:
+          testResultsFormat: 'VSTest'
+          testResultsFiles: '*.trx'
+          searchFolder: '$(Build.SourcesDirectory)/artifacts/TestResults/$(_BuildConfig)'
+        continueOnError: true
+        condition: always()
 
       - ${{ if and(ne(variables['System.TeamProject'], 'public'), notin(variables['Build.Reason'], 'PullRequest')) }}:
         - task: PublishBuildArtifacts@1
@@ -136,13 +156,13 @@ jobs:
       - task: NodeTool@0
         displayName: Add NodeJS/npm
         inputs:
-          versionSpec: '>=11'
+          versionSpec: '>=12'
 
       - task: UseDotNet@2
         displayName: Add dotnet
         inputs:
           packageType: sdk
-          version: 2.1.503
+          version: $(DotNetSdkVersion)
           installationPath: $(Agent.ToolsDirectory)/dotnet
 
       - script: dotnet new -i Microsoft.AspNetCore.Blazor.Templates::$(BlazorTemplateVersion)
@@ -160,3 +180,12 @@ jobs:
         displayName: Build / Test
         env:
           TRYDOTNET_PACKAGES_PATH: $(TryDotNetPackagesPath)
+
+      - task: PublishTestResults@2
+        displayName: Publish NPM Test Results
+        inputs:
+          testResultsFormat: 'VSTest'
+          testResultsFiles: '*.trx'
+          searchFolder: '$(Build.SourcesDirectory)/artifacts/TestResults/$(_BuildConfig)'
+        continueOnError: true
+        condition: always()

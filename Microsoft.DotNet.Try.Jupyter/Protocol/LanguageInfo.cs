@@ -1,7 +1,7 @@
 // Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.Collections.Generic;
+using System;
 using Newtonsoft.Json;
 
 namespace Microsoft.DotNet.Try.Jupyter.Protocol
@@ -9,27 +9,76 @@ namespace Microsoft.DotNet.Try.Jupyter.Protocol
     public class LanguageInfo
     {
         [JsonProperty("name")]
-        public string Name { get; set; }
+        public string Name { get; }
 
         [JsonProperty("version")]
-        public string Version { get; set; }
+        public string Version { get; }
 
         [JsonProperty("mimetype")]
-        public string MimeType { get; set; }
+        public string MimeType { get;  }
 
         [JsonProperty("file_extension")]
-        public string FileExtension { get; set; }
+        public string FileExtension { get; }
 
         [JsonProperty("pygments_lexer")]
-        public string PygmentsLexer { get; set; }
+        public string PygmentsLexer { get;  }
 
         [JsonProperty("codemirror_mode", NullValueHandling = NullValueHandling.Ignore)]
         public object CodeMirrorMode { get; set; }
 
         [JsonProperty("nbconvert_exporter", NullValueHandling = NullValueHandling.Ignore)]
-        public string NbConvertExporter { get; set; }
+        public string NbConvertExporter { get;  }
 
-        [JsonProperty("help_links")]
-        public List<Link> HelpLinks { get;  } = new List<Link>();
+        public LanguageInfo(string name, string version, string mimeType, string fileExtension, string pygmentsLexer = null, object codeMirrorMode = null, string nbConvertExporter = null)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException("Value cannot be null or whitespace.", nameof(name));
+            }
+
+            if (string.IsNullOrWhiteSpace(version))
+            {
+                throw new ArgumentException("Value cannot be null or whitespace.", nameof(version));
+            }
+
+            if (string.IsNullOrWhiteSpace(mimeType))
+            {
+                throw new ArgumentException("Value cannot be null or whitespace.", nameof(mimeType));
+            }
+
+            if (string.IsNullOrWhiteSpace(fileExtension))
+            {
+                throw new ArgumentException("Value cannot be null or whitespace.", nameof(fileExtension));
+            }
+            Name = name;
+            Version = version;
+            MimeType = mimeType;
+            FileExtension = fileExtension;
+            PygmentsLexer = pygmentsLexer;
+            CodeMirrorMode = codeMirrorMode;
+            NbConvertExporter = nbConvertExporter;
+        }
+    }
+
+    public class CSharpLanguageInfo : LanguageInfo
+    {
+        public CSharpLanguageInfo(string version = "7.3") : base("C#", version, "text/x-csharp", ".cs", pygmentsLexer: "csharp")
+        {
+        }
+    }
+
+    public class FSharpLanguageInfo : LanguageInfo
+    {
+        public FSharpLanguageInfo(string version = "4.5") : base("C#", version, "text/x-fsharp", ".fs", pygmentsLexer: "fsharp")
+        {
+           
+        }
+    }
+
+    public class VBnetLanguageInfo : LanguageInfo
+    {
+        public VBnetLanguageInfo(string version = "15.0") : base("C#", version, "text/x-vbnet", ".vb", pygmentsLexer: "vbnet")
+        {
+        }
     }
 }
